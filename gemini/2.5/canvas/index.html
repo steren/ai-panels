@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Witness Panel Generator</title>
+    <style>
+        :root {
+            --background-color: #1a1a1a;
+            --panel-bg: #3a526b;
+            --grid-line: #8aaabe;
+            --path-color: #f2c869;
+            --start-node: #f2c869;
+            --node-color: #8aaabe;
+            --success-color: #77dd77;
+            --fail-color: #ff6961;
+            --text-color: #f0f0f0;
+            --button-bg: #4a6888;
+            --button-hover-bg: #5a7898;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-weight: 300;
+            color: var(--grid-line);
+        }
+
+        #panel-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        canvas {
+            background-color: var(--panel-bg);
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            touch-action: none; /* Prevents scrolling on touch devices */
+        }
+
+        #controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        button {
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            background-color: var(--button-hover-bg);
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+
+        #message {
+            height: 24px;
+            font-size: 18px;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+
+        .success {
+            color: var(--success-color);
+        }
+
+        .fail {
+            color: var(--fail-color);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Panel Generator</h1>
+
+    <div id="panel-container">
+        <canvas id="witness-panel"></canvas>
+        <div id="controls">
+            <button id="new-puzzle-btn">New Puzzle</button>
+            <p id="message"></p>
+        </div>
+    </div>
+
+    <script>
+        // --- Setup and Configuration ---
+        const canvas = document.getElementById('witness-panel');
+        const ctx = canvas.getContext('2d');
+        const newPuzzleBtn = document.getElementById('new-puzzle-btn');
+        const messageEl = document.getElementById('message');
+
+        const GRID_SIZE = 5; // 5x5 grid of cells
+        const NODE_COUNT = GRID_SIZE + 1;
+        let CELL_SIZE, PADDING, NODE_RADIUS, PATH_WIDTH;
+
+        let nodes = [];
+        let puzzleElements = []; // Stores elements like {x, y, type: 'black'/'white'}
+        let path = []; // User's drawn path: [[y, x], [y, x], ...]
+        let isDrawing = false;
+        let startNode, endNode;
+
+        // --- Sizing and Resizing ---
+        function setSizes() {
+            const containerWidth = window.innerWidth * 0.9;
+            const containerHeight = window.innerHeight * 0.7;
+            const minDim = Math.min(containerWidth, containerHeight, 600);
+            
+            canvas.width = minDim;
+            canvas.height = minDim;
+
+            CELL_SIZE = canvas.width / (GRID_SIZE + 1);
+            PADDING = CELL_SIZE / 2;
+            NODE_RADIUS = CELL_SIZE * 0.1;
+            PATH_WIDTH = NODE_RADIUS * 1.5;
+        }
+
+        // --- Puzzle Generation ---
+        function generatePuzzle() {
+            path = [];
+            isDrawing = false;
+            messageEl.textContent = '';
+            messageEl.className = '';
+
+            // 1. Define start and end nodes
+            startNode = { y: NODE_COUNT - 1, x: 0 };
+            endNode = { y: 0, x: NODE_COUNT - 1 };
+
+            // 2. Generate node positions
+            nodes = [];
+            for (let y = 0; y < NODE_COUNT; y++) {
+                nodes[y] = [];
+                for (let x = 0; x < NODE_COUNT; x++) {
+                    nodes[y][x] = {
+                        px: PADDING + x * CELL_SIZE,
+                        py: PADDING + y * CELL_SIZE
+                    };
+                }
+            }
+
+            // 3. Place puzzle elements (black/white squares)
+            puzzleElements = [];
+            const numElements = 2 + Math.floor(Math.random() * 3); // 2 to 4 of each color
+            const availableCells = [];
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    availableCells.push({ y, x });
+                }
+            }
+
+            // Shuffle available cells
+            for (let i = availableCells.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [availableCells[i], availableCells[j]] = [availableCells[j], availableCells[i]];
+            }
+
+            // Place black squares
+            for (let i = 0; i < numElements; i++) {
+                const cell = availableCells.pop();
+                puzzleElements.push({ ...cell, type: 'black' });
+            }
+            // Place white squares
+            for (let i = 0; i < numElements; i++) {
+                const cell = availableCells.pop();
+                puzzleElements.push({ ...cell, type: 'white' });
+            }
+            
+            drawPanel();
+        }
+
+        // --- Drawing ---
+        function drawPanel() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid lines
+            ctx.strokeStyle = 'var(--grid-line)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < NODE_COUNT; i++) {
+                // Vertical
+                ctx.beginPath();
+                ctx.moveTo(PADDING + i * CELL_SIZE, PADDING);
+                ctx.lineTo(PADDING + i * CELL_SIZE, canvas.height - PADDING);
+                ctx.stroke();
+                // Horizontal
+                ctx.beginPath();
+                ctx.moveTo(PADDING, PADDING + i * CELL_SIZE);
+                ctx.lineTo(canvas.width - PADDING, PADDING + i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // Draw puzzle elements
+            const squareSize = CELL_SIZE * 0.5;
+            puzzleElements.forEach(el => {
+                ctx.fillStyle = el.type;
+                ctx.fillRect(
+                    PADDING + el.x * CELL_SIZE + (CELL_SIZE - squareSize) / 2,
+                    PADDING + el.y * CELL_SIZE + (CELL_SIZE - squareSize) / 2,
+                    squareSize,
+                    squareSize
+                );
+            });
+
+            // Draw nodes
+            ctx.fillStyle = 'var(--node-color)';
+            for (let y = 0; y < NODE_COUNT; y++) {
+                for (let x = 0; x < NODE_COUNT; x++) {
+                    const node = nodes[y][x];
+                    ctx.beginPath();
+                    ctx.arc(node.px, node.py, NODE_RADIUS, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Draw start node
+            const startPos = nodes[startNode.y][startNode.x];
+            ctx.fillStyle = 'var(--start-node)';
+            ctx.beginPath();
+            ctx.arc(startPos.px, startPos.py, NODE_RADIUS * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw end node (rounded line cap)
+            const endPos = nodes[endNode.y][endNode.x];
+            ctx.strokeStyle = 'var(--grid-line)';
+            ctx.lineWidth = PATH_WIDTH * 0.75;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(endPos.px, endPos.py - CELL_SIZE / 2);
+            ctx.lineTo(endPos.px, endPos.py);
+            ctx.stroke();
+            ctx.lineCap = 'butt'; // Reset
+
+            // Draw user path
+            if (path.length > 0) {
+                ctx.strokeStyle = 'var(--path-color)';
+                ctx.lineWidth = PATH_WIDTH;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                const headPos = nodes[path[0][0]][path[0][1]];
+                ctx.beginPath();
+                ctx.moveTo(headPos.px, headPos.py);
+                for (let i = 1; i < path.length; i++) {
+                    const pos = nodes[path[i][0]][path[i][1]];
+                    ctx.lineTo(pos.px, pos.py);
+                }
+                ctx.stroke();
+                
+                // Draw glowing head
+                const lastNode = path[path.length - 1];
+                const lastPos = nodes[lastNode[0]][lastNode[1]];
+                ctx.fillStyle = 'var(--path-color)';
+                ctx.shadowColor = 'var(--path-color)';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                ctx.arc(lastPos.px, lastPos.py, PATH_WIDTH, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0; // Reset shadow
+            }
+        }
+
+        // --- Input Handling ---
+        function getMousePos(event) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle both mouse and touch events
+            const clientX = event.clientX || event.touches[0].clientX;
+            const clientY = event.clientY || event.touches[0].clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function getNearestNode(pos) {
+            let closestNode = null;
+            let minDist = Infinity;
+            for (let y = 0; y < NODE_COUNT; y++) {
+                for (let x = 0; x < NODE_COUNT; x++) {
+                    const nodePos = nodes[y][x];
+                    const dist = Math.sqrt((pos.x - nodePos.px) ** 2 + (pos.y - nodePos.py) ** 2);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestNode = { y, x };
+                    }
+                }
+            }
+            // Only snap if within a reasonable distance (e.g., half a cell)
+            return minDist < CELL_SIZE / 2 ? closestNode : null;
+        }
+
+        function handleStart(event) {
+            event.preventDefault();
+            const pos = getMousePos(event);
+            const nearest = getNearestNode(pos);
+            if (nearest && nearest.y === startNode.y && nearest.x === startNode.x) {
+                isDrawing = true;
+                path = [[startNode.y, startNode.x]];
+                drawPanel();
+            }
+        }
+
+        function handleMove(event) {
+            if (!isDrawing) return;
+            event.preventDefault();
+            const pos = getMousePos(event);
+            const nearest = getNearestNode(pos);
+
+            if (nearest) {
+                const [lastY, lastX] = path[path.length - 1];
+                const { y, x } = nearest;
+
+                // Check if it's an adjacent, unvisited node
+                const isAdjacent = (Math.abs(y - lastY) + Math.abs(x - lastX)) === 1;
+                const isVisited = path.some(([py, px]) => py === y && px === x);
+
+                if (isAdjacent && !isVisited) {
+                    path.push([y, x]);
+                } else if (path.length > 1) {
+                    // Allow backtracking
+                    const [prevY, prevX] = path[path.length - 2];
+                    if (y === prevY && x === prevX) {
+                        path.pop();
+                    }
+                }
+                drawPanel();
+            }
+        }
+
+        function handleEnd(event) {
+            if (!isDrawing) return;
+            event.preventDefault();
+            isDrawing = false;
+
+            const [lastY, lastX] = path[path.length - 1];
+            if (lastY === endNode.y && lastX === endNode.x) {
+                checkSolution();
+            } else {
+                // If not at the end, reset the path
+                path = [];
+                drawPanel();
+            }
+        }
+
+        // --- Puzzle Validation ---
+        function checkSolution() {
+            const blackSquares = puzzleElements.filter(e => e.type === 'black');
+            const whiteSquares = puzzleElements.filter(e => e.type === 'white');
+
+            if (blackSquares.length === 0 || whiteSquares.length === 0) {
+                // If one color is missing, any path to the end is valid.
+                showResult(true);
+                return;
+            }
+
+            // Use a flood fill (BFS) to check for separation
+            const isSeparated = areColorsSeparated();
+
+            showResult(isSeparated);
+        }
+        
+        function areColorsSeparated() {
+            const pathSet = new Set(path.map(([y, x]) => `${y},${x}`));
+            const visited = new Set();
+            const queue = [];
+            
+            // Start BFS from the first black square
+            const firstBlack = puzzleElements.find(e => e.type === 'black');
+            if (!firstBlack) return true; // No black squares to separate
+            
+            queue.push([firstBlack.y, firstBlack.x]);
+            visited.add(`${firstBlack.y},${firstBlack.x}`);
+            
+            let head = 0;
+            while(head < queue.length) {
+                const [y, x] = queue[head++];
+                
+                // Check neighbors (up, down, left, right)
+                const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+                for(const [dy, dx] of neighbors) {
+                    const ny = y + dy;
+                    const nx = x + dx;
+                    
+                    // 1. Check if the move is valid
+                    if (ny < 0 || ny >= GRID_SIZE || nx < 0 || nx >= GRID_SIZE) continue;
+                    if (visited.has(`${ny},${nx}`)) continue;
+                    
+                    // 2. Check if the path blocks this move
+                    // A path between (y,x) and (y,x+1) is blocked if the user path contains both nodes (y,x+1) and (y+1,x+1)
+                    // and also (y,x) and (y+1,x). More simply, check the edge between the cells.
+                    const edgeY1 = y + (dy > 0 ? 1 : 0);
+                    const edgeX1 = x + (dx > 0 ? 1 : 0);
+                    const edgeY2 = y + (dy > 0 ? 1 : 0) + Math.abs(dx);
+                    const edgeX2 = x + (dx > 0 ? 1 : 0) + Math.abs(dy);
+
+                    if (pathSet.has(`${edgeY1},${edgeX1}`) && pathSet.has(`${edgeY2},${edgeX2}`)) {
+                        continue; // Path blocks this way
+                    }
+
+                    // 3. If not blocked, add to queue and check its color
+                    visited.add(`${ny},${nx}`);
+                    queue.push([ny, nx]);
+                }
+            }
+
+            // After BFS, check what was reached
+            const reachedElements = puzzleElements.filter(el => visited.has(`${el.y},${el.x}`));
+            const hasReachedWhite = reachedElements.some(el => el.type === 'white');
+
+            // If we started with black and reached white, it's a failure.
+            return !hasReachedWhite;
+        }
+
+
+        function showResult(isSuccess) {
+            messageEl.textContent = isSuccess ? 'Solved!' : 'Incorrect';
+            messageEl.className = isSuccess ? 'success' : 'fail';
+
+            // Flash the path color
+            const originalColor = 'var(--path-color)';
+            const resultColor = isSuccess ? 'var(--success-color)' : 'var(--fail-color)';
+            
+            let flashes = 0;
+            const interval = setInterval(() => {
+                document.documentElement.style.setProperty('--path-color', flashes % 2 === 0 ? resultColor : originalColor);
+                flashes++;
+                if (flashes > 3) {
+                    clearInterval(interval);
+                    document.documentElement.style.setProperty('--path-color', originalColor);
+                    // Generate new puzzle on success
+                    if (isSuccess) {
+                        setTimeout(generatePuzzle, 500);
+                    } else {
+                        // Reset path on failure
+                        path = [];
+                        drawPanel();
+                    }
+                }
+            }, 200);
+        }
+
+        // --- Event Listeners ---
+        newPuzzleBtn.addEventListener('click', generatePuzzle);
+        window.addEventListener('resize', () => {
+            setSizes();
+            generatePuzzle();
+        });
+
+        // Mouse events
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        canvas.addEventListener('mouseup', handleEnd);
+        canvas.addEventListener('mouseleave', () => { // If mouse leaves canvas, stop drawing
+             if (isDrawing) {
+                isDrawing = false;
+                path = [];
+                drawPanel();
+            }
+        });
+
+        // Touch events
+        canvas.addEventListener('touchstart', handleStart);
+        canvas.addEventListener('touchmove', handleMove);
+        canvas.addEventListener('touchend', handleEnd);
+
+        // --- Initial Load ---
+        setSizes();
+        generatePuzzle();
+    </script>
+</body>
+</html>
