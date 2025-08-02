@@ -1,0 +1,6 @@
+{
+  "name": "The Witness Panel Generator",
+  "description": "An application that uses the Gemini API to generate and render puzzles inspired by the game 'The Witness'. Users can draw a path to solve the puzzle based on rules like separating colors and collecting points.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
