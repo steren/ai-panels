@@ -1,0 +1,24 @@
+
+CREATE TABLE panels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  grid_data TEXT NOT NULL,
+  symbols_data TEXT NOT NULL,
+  solution_path TEXT,
+  difficulty INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_solutions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  panel_id INTEGER NOT NULL,
+  user_id TEXT,
+  solution_path TEXT NOT NULL,
+  is_correct BOOLEAN NOT NULL,
+  solve_time INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
